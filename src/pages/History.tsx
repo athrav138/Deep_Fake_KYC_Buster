@@ -5,6 +5,7 @@ import { cn } from '../lib/utils';
 import { generateKYCReport } from '../lib/reportGenerator';
 import { auth, rtdb } from '../lib/firebase';
 import { ref, get } from 'firebase/database';
+import { safeFetch } from '../lib/api';
 
 export default function HistoryPage({ user }: { user: any }) {
   const [kycRecords, setKycRecords] = useState<any[]>([]);
@@ -21,13 +22,10 @@ export default function HistoryPage({ user }: { user: any }) {
   const fetchHistory = async () => {
     try {
       // 1. Fetch from Local API (for existing data)
-      const [kycRes, videoRes] = await Promise.all([
-        fetch('/api/kyc/history', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } }),
-        fetch('/api/video/history', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } })
+      const [kycData, videoData] = await Promise.all([
+        safeFetch('/api/kyc/history', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } }),
+        safeFetch('/api/video/history', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } })
       ]);
-      
-      const kycData = await kycRes.json();
-      const videoData = await videoRes.json();
       
       // 2. Fetch from Realtime Database
       let rtdbKycData: any[] = [];

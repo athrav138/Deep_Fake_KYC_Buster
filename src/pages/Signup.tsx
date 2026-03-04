@@ -6,6 +6,7 @@ import { auth, rtdb, googleProvider } from '../lib/firebase';
 import { createUserWithEmailAndPassword, updateProfile, signInWithPopup } from 'firebase/auth';
 import { ref, set } from 'firebase/database';
 import { useToast } from '../context/ToastContext';
+import { safeFetch } from '../lib/api';
 
 export default function Signup() {
   const { showToast } = useToast();
@@ -31,20 +32,19 @@ export default function Signup() {
       const user = result.user;
 
       // 1. Sign up with local backend
-      const res = await fetch('/api/auth/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email: user.email, 
-          password: 'google-auth-placeholder-password',
-          fullName: user.displayName 
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        if (data.error !== "Email already exists") {
-          throw new Error(data.error || "Failed to sync Google account");
+      try {
+        await safeFetch('/api/auth/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            email: user.email, 
+            password: 'google-auth-placeholder-password',
+            fullName: user.displayName 
+          }),
+        });
+      } catch (err: any) {
+        if (!err.message.includes("already exists")) {
+          throw err;
         }
       }
 
@@ -81,19 +81,17 @@ export default function Signup() {
     try {
       const trimmedEmail = email.trim().toLowerCase();
       // 1. Sign up with local backend first (Source of Truth)
-      const res = await fetch('/api/auth/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: trimmedEmail, password, fullName }),
-      });
-      
-      const data = await res.json();
-      
-      if (!res.ok) {
-        if (data.error === "Email already exists") {
+      try {
+        await safeFetch('/api/auth/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: trimmedEmail, password, fullName }),
+        });
+      } catch (err: any) {
+        if (err.message.includes("already exists")) {
           throw new Error("This email is already registered. Please sign in instead.");
         }
-        throw new Error(data.error || "Failed to create account");
+        throw err;
       }
 
       // 2. Optional Firebase Sync (If configured)

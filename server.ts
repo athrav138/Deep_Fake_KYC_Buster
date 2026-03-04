@@ -12,90 +12,102 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const db = new Database("kyc.db");
 const JWT_SECRET = process.env.JWT_SECRET || "kyc-buster-secret-2026";
 
-// Initialize DB
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE,
-    password TEXT,
-    full_name TEXT,
-    role TEXT DEFAULT 'user',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+let db: Database.Database;
 
-  CREATE TABLE IF NOT EXISTS kyc_records (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    status TEXT DEFAULT 'pending', -- pending, verified, suspicious, fake
-    aadhaar_data TEXT,
-    aadhaar_analysis TEXT,
-    face_analysis TEXT,
-    voice_analysis TEXT,
-    final_decision TEXT,
-    risk_score INTEGER,
-    confidence_score INTEGER,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  );
+function initDb() {
+  if (db) return db;
+  
+  // On Vercel, the root is read-only. Use /tmp for the database file.
+  const dbPath = process.env.VERCEL ? path.join("/tmp", "kyc.db") : "kyc.db";
+  db = new Database(dbPath);
 
-  CREATE TABLE IF NOT EXISTS video_analyses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    video_name TEXT,
-    is_deepfake BOOLEAN,
-    risk_level TEXT,
-    confidence_score INTEGER,
-    analysis_data TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  );
+  // Initialize DB
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT UNIQUE,
+      password TEXT,
+      full_name TEXT,
+      role TEXT DEFAULT 'user',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
 
-  CREATE TABLE IF NOT EXISTS password_resets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT,
-    token TEXT,
-    expires_at DATETIME,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-`);
+    CREATE TABLE IF NOT EXISTS kyc_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      status TEXT DEFAULT 'pending', -- pending, verified, suspicious, fake
+      aadhaar_data TEXT,
+      aadhaar_analysis TEXT,
+      face_analysis TEXT,
+      voice_analysis TEXT,
+      final_decision TEXT,
+      risk_score INTEGER,
+      confidence_score INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    );
 
-// Seed Admin if not exists
-const adminExists = db.prepare("SELECT * FROM users WHERE role = 'admin'").get();
-if (!adminExists) {
-  const hashedPassword = bcrypt.hashSync("admin123", 10);
-  db.prepare("INSERT INTO users (email, password, full_name, role) VALUES (?, ?, ?, ?)").run(
-    "admin@kycbuster.com",
-    hashedPassword,
-    "System Admin",
-    "admin"
-  );
-}
+    CREATE TABLE IF NOT EXISTS video_analyses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      video_name TEXT,
+      is_deepfake BOOLEAN,
+      risk_level TEXT,
+      confidence_score INTEGER,
+      analysis_data TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    );
 
-// Seed Demo Users if not exists
-const demoUsers = [
-  { email: "rucha8830@gmail.com", name: "Rucha Demo" },
-  { email: "chabutaisuryavanshi42@gmail.com", name: "Chabutai Demo" }
-];
+    CREATE TABLE IF NOT EXISTS password_resets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT,
+      token TEXT,
+      expires_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
 
-demoUsers.forEach(demo => {
-  const exists = db.prepare("SELECT * FROM users WHERE email = ?").get(demo.email);
-  if (!exists) {
-    const hashedPassword = bcrypt.hashSync("password123", 10);
+  // Seed Admin if not exists
+  const adminExists = db.prepare("SELECT * FROM users WHERE role = 'admin'").get();
+  if (!adminExists) {
+    const hashedPassword = bcrypt.hashSync("admin123", 10);
     db.prepare("INSERT INTO users (email, password, full_name, role) VALUES (?, ?, ?, ?)").run(
-      demo.email,
+      "admin@kycbuster.com",
       hashedPassword,
-      demo.name,
-      "user"
+      "System Admin",
+      "admin"
     );
   }
-});
+
+  // Seed Demo Users if not exists
+  const demoUsers = [
+    { email: "rucha8830@gmail.com", name: "Rucha Demo" },
+    { email: "chabutaisuryavanshi42@gmail.com", name: "Chabutai Demo" }
+  ];
+
+  demoUsers.forEach(demo => {
+    const exists = db.prepare("SELECT * FROM users WHERE email = ?").get(demo.email);
+    if (!exists) {
+      const hashedPassword = bcrypt.hashSync("password123", 10);
+      db.prepare("INSERT INTO users (email, password, full_name, role) VALUES (?, ?, ?)").run(
+        demo.email,
+        hashedPassword,
+        demo.name
+      );
+    }
+  });
+
+  return db;
+}
 
 async function startServer() {
   const app = express();
   app.use(express.json({ limit: '50mb' }));
+  
+  db = initDb();
 
   // Auth Middleware
   const authenticate = (req: any, res: any, next: any) => {
@@ -311,6 +323,15 @@ async function startServer() {
       WHERE u.role = 'user'
     `).all();
     res.json(users);
+  });
+
+  // Global Error Handler
+  app.use((err: any, req: any, res: any, next: any) => {
+    console.error("Server Error:", err);
+    res.status(err.status || 500).json({
+      error: err.message || "Internal Server Error",
+      stack: process.env.NODE_ENV === "development" ? err.stack : undefined
+    });
   });
 
   // Vite middleware

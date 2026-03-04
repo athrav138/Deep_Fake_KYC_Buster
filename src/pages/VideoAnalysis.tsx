@@ -7,6 +7,7 @@ import {
 import { GoogleGenAI } from "@google/genai";
 import { cn } from '../lib/utils';
 import { useToast } from '../context/ToastContext';
+import { safeFetch } from '../lib/api';
 
 const getFriendlyErrorMessage = (err: any): string => {
   const msg = err?.message || '';
@@ -104,7 +105,7 @@ export default function VideoAnalysis() {
       showToast('Deepfake analysis complete', 'success');
 
       // Save to DB
-      await fetch('/api/video/analyze', {
+      await safeFetch('/api/video/analyze', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

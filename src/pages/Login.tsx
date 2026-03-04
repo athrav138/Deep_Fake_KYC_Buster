@@ -5,6 +5,7 @@ import { motion } from 'motion/react';
 import { auth, googleProvider } from '../lib/firebase';
 import { signInWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
 import { useToast } from '../context/ToastContext';
+import { safeFetch } from '../lib/api';
 
 export default function Login({ onLogin }: { onLogin: (user: any) => void }) {
   const { showToast } = useToast();
@@ -29,7 +30,7 @@ export default function Login({ onLogin }: { onLogin: (user: any) => void }) {
       const user = result.user;
 
       // Sync with local backend
-      const res = await fetch('/api/auth/login', {
+      const data = await safeFetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -37,12 +38,6 @@ export default function Login({ onLogin }: { onLogin: (user: any) => void }) {
           password: 'google-auth-placeholder-password' // Backend handles auto-creation/migration
         }),
       });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to sync Google account");
-      }
 
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
@@ -70,43 +65,40 @@ export default function Login({ onLogin }: { onLogin: (user: any) => void }) {
     try {
       const trimmedEmail = email.trim().toLowerCase();
       // 1. Sign in with local backend first (Source of Truth)
-      let res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: trimmedEmail, password }),
-      });
-      
-      let data = await res.json();
-      
-      // 2. Migration Fallback: If local user not found, try Firebase
-      if (res.status === 404 && auth) {
-        try {
-          const userCredential = await signInWithEmailAndPassword(auth, email, password);
-          const user = userCredential.user;
-          
-          // If Firebase success, migrate to local DB
-          const signupRes = await fetch('/api/auth/signup', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password, fullName: user.displayName || email.split('@')[0] }),
-          });
-          
-          if (signupRes.ok) {
+      let data;
+      try {
+        data = await safeFetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: trimmedEmail, password }),
+        });
+      } catch (err: any) {
+        // 2. Migration Fallback: If local user not found, try Firebase
+        if ((err.message.includes("404") || err.message.includes("not found")) && auth) {
+          try {
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            const user = userCredential.user;
+            
+            // If Firebase success, migrate to local DB
+            await safeFetch('/api/auth/signup', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email, password, fullName: user.displayName || email.split('@')[0] }),
+            });
+            
             // Retry local login now that user is migrated
-            res = await fetch('/api/auth/login', {
+            data = await safeFetch('/api/auth/login', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ email, password }),
             });
-            data = await res.json();
+          } catch (fbErr: any) {
+            console.warn("Firebase migration check failed:", fbErr);
+            throw err; // Re-throw original 404 error if migration fails
           }
-        } catch (fbErr) {
-          console.warn("Firebase migration check failed:", fbErr);
+        } else {
+          throw err;
         }
-      }
-
-      if (!res.ok) {
-        throw new Error(data.error || "Invalid credentials");
       }
 
       // 3. Optional Firebase Sync (If configured and not already signed in)

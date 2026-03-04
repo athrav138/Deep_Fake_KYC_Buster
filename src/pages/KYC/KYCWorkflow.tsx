@@ -12,6 +12,7 @@ import { cn } from '../../lib/utils';
 import { auth, rtdb } from '../../lib/firebase';
 import { ref, push, set, onValue, serverTimestamp } from 'firebase/database';
 import { useToast } from '../../context/ToastContext';
+import { safeFetch } from '../../lib/api';
 
 const getFriendlyErrorMessage = (err: any): string => {
   const msg = err?.message || '';
@@ -541,7 +542,7 @@ export default function KYCWorkflow({ user }: { user: any }) {
       }
 
       // Save to local DB as well (keep existing logic for compatibility)
-      const res = await fetch('/api/kyc/finalize', {
+      await safeFetch('/api/kyc/finalize', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -555,8 +556,6 @@ export default function KYCWorkflow({ user }: { user: any }) {
           userId: user.id
         })
       });
-      
-      if (!res.ok) throw new Error("Failed to save verification results to the server.");
       
       setFinalResult(final);
       showToast('KYC process completed successfully', 'success');

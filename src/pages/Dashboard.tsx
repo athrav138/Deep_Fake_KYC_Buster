@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Shield, CheckCircle2, AlertCircle, Clock, ArrowRight, Fingerprint, Camera, Mic, Video, ShieldX, ShieldCheck, Calendar } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
+import { safeFetch } from '../lib/api';
 
 export default function Dashboard({ user }: { user: any }) {
   const navigate = useNavigate();
@@ -14,26 +15,19 @@ export default function Dashboard({ user }: { user: any }) {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        const [videoRes, kycRes] = await Promise.all([
-          fetch('/api/video/history', {
+        const [videoData, kycData] = await Promise.all([
+          safeFetch('/api/video/history', {
             headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
           }),
-          fetch('/api/kyc/history', {
+          safeFetch('/api/kyc/history', {
             headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
           })
         ]);
 
-        if (videoRes.ok) {
-          const data = await videoRes.json();
-          setVideoHistory(data.slice(0, 3));
-        }
-
-        if (kycRes.ok) {
-          const data = await kycRes.json();
-          setKycHistory(data.slice(0, 3));
-          if (data.length > 0) {
-            setLatestKyc(data[0]);
-          }
+        setVideoHistory(videoData.slice(0, 3));
+        setKycHistory(kycData.slice(0, 3));
+        if (kycData.length > 0) {
+          setLatestKyc(kycData[0]);
         }
       } catch (err) {
         console.error("Failed to fetch dashboard data:", err);
