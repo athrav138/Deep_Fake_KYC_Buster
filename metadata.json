@@ -1,0 +1,8 @@
+{
+  "name": "Atharv Milind Suryavanshi",
+  "description": "Advanced AI-powered KYC verification platform with deepfake detection using Gemini API.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
