@@ -6,8 +6,27 @@ import Database from "better-sqlite3";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
+import admin from "firebase-admin";
 
 dotenv.config();
+
+// Initialize Firebase Admin if service account is provided
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    const saValue = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
+    if (!saValue.startsWith('{')) {
+      throw new Error("FIREBASE_SERVICE_ACCOUNT must be a JSON string, not a file path or placeholder.");
+    }
+    const serviceAccount = JSON.parse(saValue);
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      databaseURL: process.env.VITE_FIREBASE_DATABASE_URL
+    });
+    console.log("Firebase Admin initialized successfully.");
+  } catch (err: any) {
+    console.error("Failed to initialize Firebase Admin:", err.message);
+  }
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -45,6 +64,7 @@ function initDb() {
       final_decision TEXT,
       risk_score INTEGER,
       confidence_score INTEGER,
+      location_data TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(user_id) REFERENCES users(id)
     );
@@ -70,6 +90,27 @@ function initDb() {
     );
   `);
 
+  // Migration: Add missing columns to kyc_records if they don't exist
+  const tableInfo = db.prepare("PRAGMA table_info(kyc_records)").all() as any[];
+  const columns = tableInfo.map(col => col.name);
+  
+  const requiredColumns = [
+    { name: 'aadhaar_analysis', type: 'TEXT' },
+    { name: 'face_analysis', type: 'TEXT' },
+    { name: 'voice_analysis', type: 'TEXT' },
+    { name: 'final_decision', type: 'TEXT' },
+    { name: 'risk_score', type: 'INTEGER' },
+    { name: 'confidence_score', type: 'INTEGER' },
+    { name: 'location_data', type: 'TEXT' }
+  ];
+
+  requiredColumns.forEach(col => {
+    if (!columns.includes(col.name)) {
+      console.log(`Migrating kyc_records: adding ${col.name} column`);
+      db.exec(`ALTER TABLE kyc_records ADD COLUMN ${col.name} ${col.type}`);
+    }
+  });
+
   // Seed Admin if not exists
   const adminExists = db.prepare("SELECT * FROM users WHERE role = 'admin'").get();
   if (!adminExists) {
@@ -92,10 +133,11 @@ function initDb() {
     const exists = db.prepare("SELECT * FROM users WHERE email = ?").get(demo.email);
     if (!exists) {
       const hashedPassword = bcrypt.hashSync("password123", 10);
-      db.prepare("INSERT INTO users (email, password, full_name, role) VALUES (?, ?, ?)").run(
+      db.prepare("INSERT INTO users (email, password, full_name, role) VALUES (?, ?, ?, ?)").run(
         demo.email,
         hashedPassword,
-        demo.name
+        demo.name,
+        'user'
       );
     }
   });
@@ -226,11 +268,12 @@ async function startServer() {
   });
 
   app.post("/api/kyc/finalize", authenticate, async (req: any, res) => {
-    const { aadhaar, face, voice, final, userId } = req.body;
+    const { aadhaar, face, voice, final, userId, location } = req.body;
     try {
+      // 1. Save to SQLite
       db.prepare(`
-        INSERT INTO kyc_records (user_id, status, aadhaar_data, aadhaar_analysis, face_analysis, voice_analysis, final_decision, risk_score, confidence_score)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO kyc_records (user_id, status, aadhaar_data, aadhaar_analysis, face_analysis, voice_analysis, final_decision, risk_score, confidence_score, location_data)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         userId || null,
         final?.decision || 'pending',
@@ -240,8 +283,36 @@ async function startServer() {
         voice ? JSON.stringify(voice) : null,
         final?.explanation || null,
         final?.riskScore ?? null,
-        final?.confidenceScore ?? null
+        final?.confidenceScore ?? null,
+        location ? JSON.stringify(location) : null
       );
+
+      // 2. Save to Firestore (if admin is initialized)
+      try {
+        if (admin.apps.length > 0) {
+          const firestore = admin.firestore();
+          await firestore.collection('kycRecords').add({
+            userId: userId || req.user.id,
+            status: final?.decision || 'pending',
+            aadhaar,
+            face,
+            voice,
+            final,
+            location,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+
+          // Log to auditLogs
+          await firestore.collection('auditLogs').add({
+            action: 'KYC_SUBMISSION',
+            userId: userId || req.user.id,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            details: { decision: final?.decision }
+          });
+        }
+      } catch (fsErr) {
+        console.warn("Firestore save failed:", fsErr);
+      }
 
       res.json(final);
     } catch (err) {

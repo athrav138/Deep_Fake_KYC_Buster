@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getDatabase } from "firebase/database";
+import { getFirestore } from "firebase/firestore";
 import { getAnalytics } from "firebase/analytics";
 
 const firebaseConfig = {
@@ -23,6 +24,7 @@ const app = isConfigValid ? initializeApp(firebaseConfig) : null;
 export const auth = app ? getAuth(app) : null as any;
 export const googleProvider = new GoogleAuthProvider();
 export const rtdb = app ? getDatabase(app) : null as any;
+export const db = app ? getFirestore(app) : null as any;
 export const analytics = (app && typeof window !== 'undefined' && firebaseConfig.measurementId) ? getAnalytics(app) : null;
 
 if (!isConfigValid) {

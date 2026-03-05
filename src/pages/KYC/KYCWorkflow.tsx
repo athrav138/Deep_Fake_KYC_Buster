@@ -25,16 +25,70 @@ const getFriendlyErrorMessage = (err: any): string => {
   return msg || 'An unexpected error occurred.';
 };
 
-type Step = 'identity' | 'face' | 'voice' | 'result' | 'history';
+type Step = 'personal' | 'document' | 'face' | 'voice' | 'analysis' | 'result' | 'history';
+
+const StepIndicator = ({ currentStep }: { currentStep: Step }) => {
+  const steps: { key: Step; label: string }[] = [
+    { key: 'personal', label: 'Personal' },
+    { key: 'document', label: 'ID Proof' },
+    { key: 'face', label: 'Face' },
+    { key: 'voice', label: 'Voice' },
+    { key: 'analysis', label: 'Analysis' },
+    { key: 'result', label: 'Result' }
+  ];
+
+  const currentIndex = steps.findIndex(s => s.key === currentStep);
+
+  return (
+    <div className="flex items-center justify-between mb-12 relative px-4">
+      <div className="absolute top-1/2 left-0 w-full h-0.5 bg-app-border -translate-y-1/2 z-0" />
+      {steps.map((s, i) => {
+        const isActive = i <= currentIndex;
+        const isCurrent = s.key === currentStep;
+        return (
+          <div key={s.key} className="relative z-10 flex flex-col items-center gap-2">
+            <div className={cn(
+              "w-10 h-10 rounded-full flex items-center justify-center transition-all duration-500 border-2",
+              isActive ? "bg-emerald-500 border-emerald-500 text-black" : "bg-app-bg border-app-border text-white/20",
+              isCurrent && "ring-4 ring-emerald-500/20 scale-110"
+            )}>
+              {i < currentIndex ? <CheckCircle2 className="w-5 h-5" /> : <span className="text-xs font-bold">{i + 1}</span>}
+            </div>
+            <span className={cn(
+              "text-[10px] uppercase tracking-widest font-bold transition-all duration-500",
+              isActive ? "text-emerald-500" : "text-white/20"
+            )}>
+              {s.label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 export default function KYCWorkflow({ user }: { user: any }) {
   const { showToast } = useToast();
-  const [step, setStep] = useState<Step>('identity');
+  const [step, setStep] = useState<Step>('personal');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
   // Data
-  const [personalDetails, setPersonalDetails] = useState({ fullName: user.fullName || user.full_name || '', dob: '', address: '' });
+  const [personalDetails, setPersonalDetails] = useState({ 
+    fullName: user.fullName || user.full_name || '', 
+    email: user.email || '',
+    phone: '',
+    dob: '', 
+    address: '' 
+  });
+  const [location, setLocation] = useState<{
+    latitude: number;
+    longitude: number;
+    city: string;
+    country: string;
+    locationId: string;
+    capturedAt: number;
+  } | null>(null);
   const [aadhaarImage, setAadhaarImage] = useState<string | null>(null);
   const [faceImage, setFaceImage] = useState<string | null>(null);
   const [livenessFrames, setLivenessFrames] = useState<string[]>([]);
@@ -80,6 +134,40 @@ export default function KYCWorkflow({ user }: { user: any }) {
       return () => unsubscribe();
     }
   }, [user?.id]);
+  // --- Location Handler ---
+  const captureLocation = async () => {
+    if (!navigator.geolocation) {
+      showToast("Geolocation is not supported by your browser", "error");
+      return;
+    }
+
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject);
+      });
+
+      const { latitude, longitude } = position.coords;
+      
+      // Reverse geocoding (mocked for now, or use a free API if available)
+      // For production, use Google Maps Geocoding API
+      const locationData = {
+        latitude,
+        longitude,
+        city: "Mumbai", // Mocked
+        country: "India", // Mocked
+        locationId: `LOC-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+        capturedAt: Date.now()
+      };
+
+      setLocation(locationData);
+      return locationData;
+    } catch (err) {
+      console.error("Location Error:", err);
+      showToast("Failed to capture location. Please enable permissions.", "error");
+      return null;
+    }
+  };
+
   const getAI = () => {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("Gemini API key is not configured in the Secrets panel.");
@@ -131,16 +219,21 @@ export default function KYCWorkflow({ user }: { user: any }) {
   // --- Step Handlers ---
 
   const handleNext = () => {
-    if (step === 'identity') setStep('face');
+    if (step === 'personal') setStep('document');
+    else if (step === 'document') setStep('face');
     else if (step === 'face') {
       setStep('voice');
       setVerificationCode(Math.floor(1000 + Math.random() * 9000).toString());
     }
-    else if (step === 'voice') finalizeKYC();
+    else if (step === 'voice') {
+      setStep('analysis');
+      finalizeKYC();
+    }
   };
 
   const handleBack = () => {
-    if (step === 'face') setStep('identity');
+    if (step === 'document') setStep('personal');
+    else if (step === 'face') setStep('document');
     else if (step === 'voice') setStep('face');
   };
 
@@ -528,6 +621,7 @@ export default function KYCWorkflow({ user }: { user: any }) {
             confidenceScore: final.confidenceScore ?? 0,
             riskLevel: (final.riskScore ?? 0) > 70 ? 'High' : (final.riskScore ?? 0) > 30 ? 'Medium' : 'Low',
             explanation: final.explanation,
+            location: location,
             timestamp: serverTimestamp(),
             createdAt: new Date().toISOString()
           };
@@ -553,7 +647,8 @@ export default function KYCWorkflow({ user }: { user: any }) {
           face: faceResult, 
           voice: currentVoiceResult,
           final: final,
-          userId: user.id
+          userId: user.id,
+          location: location
         })
       });
       
@@ -576,7 +671,7 @@ export default function KYCWorkflow({ user }: { user: any }) {
       <div className="flex flex-col gap-8 mb-12">
         <div className="flex items-center justify-center gap-4">
           <button 
-            onClick={() => setStep('identity')}
+            onClick={() => setStep('personal')}
             className={cn(
               "px-6 py-2 rounded-full text-sm font-bold transition-all flex items-center gap-2",
               step !== 'history' ? "bg-emerald-500 text-black" : "bg-app-card border border-app-border opacity-50 hover:opacity-100"
@@ -595,32 +690,15 @@ export default function KYCWorkflow({ user }: { user: any }) {
           </button>
         </div>
 
-        {step !== 'history' && (
-          <div className="flex items-center justify-between">
-            {(['identity', 'face', 'voice', 'result'] as Step[]).map((s, i) => (
-              <div key={s} className="flex items-center flex-1 last:flex-none">
-                <div className={cn(
-                  "w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all",
-                  step === s ? "border-emerald-500 bg-emerald-500/20 text-emerald-500" : 
-                  i < ['identity', 'face', 'voice', 'result'].indexOf(step) ? "border-emerald-500 bg-emerald-500 text-black" : "border-app-border opacity-20"
-                )}>
-                  {i < ['identity', 'face', 'voice', 'result'].indexOf(step) ? <CheckCircle2 className="w-6 h-6" /> : i + 1}
-                </div>
-                {i < 3 && <div className={cn("h-[2px] flex-1 mx-2", i < ['identity', 'face', 'voice', 'result'].indexOf(step) ? "bg-emerald-500" : "bg-app-border")} />}
-              </div>
-            ))}
-          </div>
-        )}
+        {step !== 'history' && step !== 'result' && <StepIndicator currentStep={step} />}
       </div>
 
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={step}
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -20 }}
-          className="bg-app-card border border-app-border rounded-3xl p-8"
-        >
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-app-card border border-app-border rounded-[40px] p-8 md:p-12 shadow-2xl relative overflow-hidden">
+          {/* Background Accents */}
+          <div className="absolute -top-24 -right-24 w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl" />
+          <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl" />
+
           {step === 'history' && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
               <div className="flex items-center gap-4 mb-4">
@@ -678,7 +756,116 @@ export default function KYCWorkflow({ user }: { user: any }) {
               )}
             </div>
           )}
-          {step === 'identity' && (
+
+          {step === 'personal' && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+              <div className="flex items-center gap-4 mb-8">
+                <div className="p-3 bg-emerald-500/20 rounded-2xl text-emerald-500">
+                  <UserIcon className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-black uppercase tracking-tight">Personal Information</h2>
+                  <p className="text-sm opacity-50">Please provide your basic details and capture your location.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-40 ml-1">Full Name</label>
+                  <input 
+                    type="text" 
+                    value={personalDetails.fullName}
+                    onChange={(e) => setPersonalDetails(prev => ({ ...prev, fullName: e.target.value }))}
+                    className="w-full bg-app-bg border border-app-border rounded-2xl px-6 py-4 focus:border-emerald-500 outline-none transition-all font-medium"
+                    placeholder="Enter your full name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-40 ml-1">Email Address</label>
+                  <input 
+                    type="email" 
+                    value={personalDetails.email}
+                    onChange={(e) => setPersonalDetails(prev => ({ ...prev, email: e.target.value }))}
+                    className="w-full bg-app-bg border border-app-border rounded-2xl px-6 py-4 focus:border-emerald-500 outline-none transition-all font-medium"
+                    placeholder="Enter your email"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-40 ml-1">Phone Number</label>
+                  <input 
+                    type="tel" 
+                    value={personalDetails.phone}
+                    onChange={(e) => setPersonalDetails(prev => ({ ...prev, phone: e.target.value }))}
+                    className="w-full bg-app-bg border border-app-border rounded-2xl px-6 py-4 focus:border-emerald-500 outline-none transition-all font-medium"
+                    placeholder="+91 XXXXX XXXXX"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-40 ml-1">Date of Birth</label>
+                  <input 
+                    type="date" 
+                    value={personalDetails.dob}
+                    onChange={(e) => setPersonalDetails(prev => ({ ...prev, dob: e.target.value }))}
+                    className="w-full bg-app-bg border border-app-border rounded-2xl px-6 py-4 focus:border-emerald-500 outline-none transition-all font-medium"
+                  />
+                </div>
+              </div>
+
+              <div className="p-6 bg-app-bg/50 rounded-3xl border border-app-border space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "p-2 rounded-xl",
+                      location ? "bg-emerald-500/20 text-emerald-500" : "bg-blue-500/20 text-blue-500"
+                    )}>
+                      <Shield className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold">Location Verification</p>
+                      <p className="text-xs opacity-50">We need your GPS coordinates for security auditing.</p>
+                    </div>
+                  </div>
+                  {!location ? (
+                    <button 
+                      onClick={captureLocation}
+                      className="text-xs font-bold bg-white text-black px-4 py-2 rounded-xl hover:bg-emerald-500 transition-all"
+                    >
+                      Capture Location
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2 text-emerald-500">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span className="text-xs font-bold uppercase tracking-widest">Captured</span>
+                    </div>
+                  )}
+                </div>
+                
+                {location && (
+                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-app-border/50">
+                    <div>
+                      <p className="text-[8px] uppercase tracking-widest opacity-40 mb-1">Latitude</p>
+                      <p className="text-xs font-mono">{location.latitude.toFixed(6)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[8px] uppercase tracking-widest opacity-40 mb-1">Longitude</p>
+                      <p className="text-xs font-mono">{location.longitude.toFixed(6)}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-6 flex justify-end">
+                <button 
+                  onClick={handleNext}
+                  disabled={!personalDetails.fullName || !personalDetails.phone || !location}
+                  className="bg-emerald-500 text-black font-bold px-10 py-4 rounded-2xl flex items-center gap-2 hover:bg-emerald-400 disabled:opacity-50 transition-all shadow-lg shadow-emerald-500/20"
+                >
+                  Continue to ID Proof <ArrowRight className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+          )}
+          {step === 'document' && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
               <div className="flex items-center gap-4 mb-8">
                 <div className="p-3 bg-emerald-500/20 rounded-2xl text-emerald-500">
@@ -1092,6 +1279,33 @@ export default function KYCWorkflow({ user }: { user: any }) {
             </div>
           )}
 
+          {step === 'analysis' && (
+            <div className="py-20 text-center space-y-8 animate-in fade-in">
+              <div className="relative w-32 h-32 mx-auto">
+                <div className="absolute inset-0 border-4 border-emerald-500/20 rounded-full" />
+                <div className="absolute inset-0 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Shield className="w-12 h-12 text-emerald-500" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-3xl font-black uppercase tracking-tight">AI Risk Analysis</h2>
+                <p className="text-sm opacity-50 max-w-sm mx-auto">Our neural networks are analyzing your documents, face, and voice for authenticity.</p>
+              </div>
+              <div className="flex flex-col items-center gap-4 max-w-xs mx-auto">
+                <div className="w-full h-1 bg-app-border rounded-full overflow-hidden">
+                  <motion.div 
+                    className="h-full bg-emerald-500"
+                    initial={{ width: "0%" }}
+                    animate={{ width: "100%" }}
+                    transition={{ duration: 5, ease: "easeInOut" }}
+                  />
+                </div>
+                <p className="text-[10px] uppercase tracking-widest font-bold opacity-40 animate-pulse">Processing Biometric Data...</p>
+              </div>
+            </div>
+          )}
+
           {step === 'result' && finalResult && (
             <div className="space-y-8 text-center py-8 animate-in zoom-in-95 duration-500">
               <div className="flex flex-col items-center gap-6">
@@ -1225,8 +1439,8 @@ export default function KYCWorkflow({ user }: { user: any }) {
               </div>
             </div>
           )}
-        </motion.div>
-      </AnimatePresence>
+        </div>
+      </div>
     </div>
   );
 }

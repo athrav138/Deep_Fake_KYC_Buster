@@ -62,38 +62,46 @@ export default function Dashboard({ user }: { user: any }) {
                 <h2 className="text-xl font-bold">Identity Verification</h2>
               </div>
 
-              <div className="flex items-center gap-4 mb-8">
+                <div className="flex items-center gap-4 mb-8">
                 <div className="flex-1 h-2 bg-app-card rounded-full overflow-hidden">
                   <div 
                     className={cn(
                       "h-full transition-all duration-1000",
                       latestKyc?.status === 'verified' ? "bg-emerald-500 w-full" : 
                       latestKyc?.status === 'suspicious' ? "bg-orange-500 w-full" :
-                      latestKyc?.status === 'fake' ? "bg-red-500 w-full" : "bg-emerald-500 w-1/4"
+                      latestKyc?.status === 'fake' ? "bg-red-500 w-full" : "bg-emerald-500 w-1/6"
                     )} 
                   />
                 </div>
                 <span className="text-xs font-mono opacity-40 uppercase tracking-widest">
-                  {latestKyc ? `Status: ${latestKyc.status}` : "Step 1 of 4"}
+                  {latestKyc ? `Status: ${latestKyc.status}` : "Step 1 of 6"}
                 </span>
               </div>
 
-                <div className="space-y-4 mb-8">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
                 <div className="flex items-center gap-3 opacity-70">
                   <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                  <span>Account Created</span>
+                  <span className="text-sm">Account Created</span>
                 </div>
                 <div className={cn("flex items-center gap-3", latestKyc ? "opacity-70" : "opacity-30")}>
                   {latestKyc ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : <Clock className="w-5 h-5" />}
-                  <span>Aadhaar Verification</span>
+                  <span className="text-sm">Personal Info</span>
                 </div>
                 <div className={cn("flex items-center gap-3", latestKyc ? "opacity-70" : "opacity-30")}>
                   {latestKyc ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : <Clock className="w-5 h-5" />}
-                  <span>Face Liveness Check</span>
+                  <span className="text-sm">ID Verification</span>
                 </div>
                 <div className={cn("flex items-center gap-3", latestKyc ? "opacity-70" : "opacity-30")}>
                   {latestKyc ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : <Clock className="w-5 h-5" />}
-                  <span>Voice Authentication</span>
+                  <span className="text-sm">Face Liveness</span>
+                </div>
+                <div className={cn("flex items-center gap-3", latestKyc ? "opacity-70" : "opacity-30")}>
+                  {latestKyc ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : <Clock className="w-5 h-5" />}
+                  <span className="text-sm">Voice Auth</span>
+                </div>
+                <div className={cn("flex items-center gap-3", latestKyc ? "opacity-70" : "opacity-30")}>
+                  {latestKyc ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : <Clock className="w-5 h-5" />}
+                  <span className="text-sm">AI Analysis</span>
                 </div>
               </div>
 
