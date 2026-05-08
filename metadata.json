@@ -1,6 +1,6 @@
 {
-  "name": "KYC Shield",
-  "description": "Advanced AI-powered KYC verification platform with deepfake detection using Gemini API.",
+  "name": "Deepfake KYC Buster",
+  "description": "A cyberpunk-themed dashboard for detecting deepfakes in KYC processes using simulated biometric analysis and a real-time Gemini AI assistant.",
   "requestFramePermissions": [
     "camera",
     "microphone",
