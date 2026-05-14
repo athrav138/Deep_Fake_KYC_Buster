@@ -1,0 +1,78 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "fullName": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fullName", "email", "role"]
+    },
+    "ChatMessage": {
+      "title": "Chat Message",
+      "description": "Message in a chat channel",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "senderRole": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderId", "senderName", "text", "timestamp"]
+    },
+    "Activity": {
+      "title": "Activity",
+      "description": "Global activity feed item",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "user": { "type": "string" },
+        "status": { "type": "string" },
+        "location": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "user", "status", "timestamp"]
+    },
+    "VideoAnalysis": {
+      "title": "Video Analysis",
+      "description": "Result of a video deepfake analysis",
+      "type": "object",
+      "properties": {
+        "videoName": { "type": "string" },
+        "isDeepfake": { "type": "boolean" },
+        "riskLevel": { "type": "string" },
+        "confidenceScore": { "type": "number" },
+        "analysisData": { "type": "object" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["videoName", "isDeepfake", "riskLevel", "confidenceScore", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Storage for user profiles"
+    },
+    "/chat_channels/community/messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Public community chat messages"
+    },
+    "/chat_channels/support/sessions/{sessionId}/messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Support chat messages for specific sessions or users"
+    },
+    "/global_activity/{activityId}": {
+      "schema": "Activity",
+      "description": "Global activity feed for the community connect page"
+    },
+    "/video_analyses/{userId}/results/{analysisId}": {
+      "schema": "VideoAnalysis",
+      "description": "Stored video deepfake analysis results for a user"
+    }
+  }
+}
